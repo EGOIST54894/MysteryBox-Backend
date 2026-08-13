@@ -62,6 +62,7 @@ class BoxListQuery(BaseModel):
     lat: Optional[float] = Field(None, description="用户纬度（按距离排序时必填）")
     lng: Optional[float] = Field(None, description="用户经度（按距离排序时必填）")
     radius: Optional[float] = Field(None, ge=0, description="搜索半径（米），不填则不限制")
+    keyword: Optional[str] = Field(None, description="关键词搜索（标题+描述）")
 
 
 # ──────────────────────────── 盲盒响应 ────────────────────────────

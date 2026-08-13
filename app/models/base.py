@@ -5,7 +5,7 @@ SQLAlchemy 模型基类
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, func
+from sqlalchemy import DateTime, Integer
 from sqlalchemy import create_engine as _create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -42,16 +42,16 @@ class TimestampMixin:
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=func.now(),
+        default=datetime.now,
         nullable=False,
-        comment="创建时间",
+        comment="创建时间（本地时间）",
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=func.now(),
-        onupdate=func.now(),
+        default=datetime.now,
+        onupdate=datetime.now,
         nullable=False,
-        comment="更新时间",
+        comment="更新时间（本地时间）",
     )
 
 

@@ -33,6 +33,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"   支付模式: {settings.PAYMENT_MODE}")
     logger.info(f"   调试模式: {settings.DEBUG}")
 
+    # 确保数据库表已创建（新增的表会自动创建，已有的表不会重复创建）
+    # 注意：必须先导入所有模型再 create_all，确保新表（如 message）被创建
+    from app.models.base import Base, engine
+    from app import models as _models  # noqa: F401 — 触发所有模型注册
+    Base.metadata.create_all(bind=engine)
+    logger.info("   数据库表已就绪")
+
     # 确保上传目录存在
     settings.upload_dir_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"   上传目录已就绪: {settings.upload_dir_path}")

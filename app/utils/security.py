@@ -8,7 +8,8 @@ import os
 import random
 from datetime import datetime, timedelta, timezone
 
-import jwt
+from jose import jwt
+from jose import JWTError
 
 from app.config import settings
 
@@ -115,7 +116,7 @@ def decode_token(token: str) -> dict:
         解码后的 payload 字典，包含 sub, role, iat, exp 等字段
 
     Raises:
-        jwt.PyJWTError: token 无效、过期或签名不匹配
+        JWTError: token 无效、过期或签名不匹配
     """
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 

@@ -206,13 +206,13 @@ def create_order(user_id: int, data, db: Session) -> Order:
     if box.stock == 0:
         box.status = 2  # 售罄
 
-    # 4. 生成订单
+    # 4. 生成订单（address_id 为可选，允许不传地址直接下单）
     order_no = _generate_order_no()
     order = Order(
         order_no=order_no,
         user_id=user_id,
         box_id=data.box_id,
-        address_id=data.address_id,
+        address_id=data.address_id if data.address_id else None,
         quantity=data.quantity,
         unit_price=unit_price,
         total_amount=total_amount,
@@ -230,6 +230,29 @@ def create_order(user_id: int, data, db: Session) -> Order:
 
     db.commit()
     db.refresh(order)
+
+    # 6. 自动创建订单群聊：发一条初始消息
+    try:
+        from app.models.message import Message
+
+        auto_msg = Message(
+            sender_id=user_id,
+            sender_role="user",
+            receiver_id=0,
+            receiver_role="all",
+            content=f"我下单了「{box.title}」，订单号 {order_no}",
+            order_id=order.id,
+            message_type="text",
+            is_read=False,
+        )
+        db.add(auto_msg)
+        db.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"自动创建下单消息失败 (order_id={order.id}, user_id={user_id}): {e}"
+        )
+
     return order
 
 
@@ -257,7 +280,7 @@ def get_order_detail(order_id: int, user_id: int, db: Session) -> dict:
     if order.user_id != user_id:
         raise ValueError("无权查看该订单")
 
-    # 构造返回数据
+    # 构造返回数据（同时包含扁平字段和嵌套字段，兼容前端各页面）
     result = {
         "id": order.id,
         "order_no": order.order_no,
@@ -265,12 +288,14 @@ def get_order_detail(order_id: int, user_id: int, db: Session) -> dict:
         "box_id": order.box_id,
         "address_id": order.address_id,
         "quantity": order.quantity,
-        "unit_price": order.unit_price,
-        "total_amount": order.total_amount,
-        "discount_amount": order.discount_amount,
-        "paid_amount": order.paid_amount,
+        "unit_price": float(order.unit_price),
+        "total_amount": float(order.total_amount),
+        "discount_amount": float(order.discount_amount),
+        "paid_amount": float(order.paid_amount),
+        "actual_price": float(order.paid_amount if order.paid_amount else order.total_amount),
         "group_id": order.group_id,
         "group_role": order.group_role,
+        "status": order.order_status,
         "order_status": order.order_status,
         "cancel_reason": order.cancel_reason,
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
@@ -282,7 +307,7 @@ def get_order_detail(order_id: int, user_id: int, db: Session) -> dict:
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
     }
 
-    # 盲盒信息
+    # 盲盒信息（嵌套 + 扁平）
     box = order.mystery_box
     if box:
         result["box"] = {
@@ -291,6 +316,17 @@ def get_order_detail(order_id: int, user_id: int, db: Session) -> dict:
             "cover_image": box.cover_image,
             "box_type": box.box_type,
         }
+        result["box_title"] = box.title
+        result["box_cover"] = box.cover_image
+        result["box_type"] = box.box_type
+        result["original_price"] = float(box.original_price) if box.original_price else 0
+        result["box_price"] = float(box.sale_price) if box.sale_price else 0
+        # 商家信息扁平
+        if box.merchant:
+            result["merchant_id"] = box.merchant.id
+            result["merchant_name"] = box.merchant.store_name or ""
+            result["merchant_phone"] = box.merchant.phone or ""
+            result["pickup_address"] = box.merchant.address_detail or ""
 
     # 地址信息
     addr = order.address
@@ -358,7 +394,12 @@ def get_user_orders(
     """
     query = db.query(Order).filter(Order.user_id == user_id)
     if status_filter:
-        query = query.filter(Order.order_status == status_filter)
+        # 支持逗号分隔的多状态筛选（如 pending_pay,paid,confirmed）
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if len(statuses) == 1:
+            query = query.filter(Order.order_status == statuses[0])
+        else:
+            query = query.filter(Order.order_status.in_(statuses))
 
     total = query.count()
     items = (
@@ -368,34 +409,36 @@ def get_user_orders(
         .all()
     )
 
-    # 转换为字典列表
+    # 转换为字典列表（扁平化字段，匹配前端 OrderInfo 接口）
     result = []
     for order in items:
+        box = order.mystery_box
+        merchant_name = ""
+        if box and box.merchant:
+            merchant_name = box.merchant.store_name or ""
         item = {
             "id": order.id,
             "order_no": order.order_no,
             "user_id": order.user_id,
             "box_id": order.box_id,
+            "box_title": box.title if box else "",
+            "box_cover": box.cover_image if box else "",
+            "box_type": box.box_type if box else "",
+            "merchant_name": merchant_name,
+            "merchant_id": box.merchant_id if box else 0,
             "quantity": order.quantity,
-            "unit_price": order.unit_price,
-            "total_amount": order.total_amount,
-            "paid_amount": order.paid_amount,
+            "unit_price": float(order.unit_price),
+            "total_amount": float(order.total_amount),
+            "actual_price": float(order.paid_amount if order.paid_amount else order.total_amount),
             "group_id": order.group_id,
             "group_role": order.group_role,
+            "status": order.order_status,
             "order_status": order.order_status,
             "cancel_reason": order.cancel_reason,
             "paid_at": order.paid_at.isoformat() if order.paid_at else None,
             "created_at": order.created_at.isoformat() if order.created_at else None,
+            "updated_at": order.updated_at.isoformat() if order.updated_at else None,
         }
-        # 盲盒摘要
-        box = order.mystery_box
-        if box:
-            item["box"] = {
-                "id": box.id,
-                "title": box.title,
-                "cover_image": box.cover_image,
-                "box_type": box.box_type,
-            }
         result.append(item)
 
     return result, total

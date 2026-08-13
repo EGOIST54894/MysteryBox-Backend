@@ -222,6 +222,21 @@ def accept_order(
     if delivery_person.status != 1:
         delivery_person.status = 1
 
+    # 8. 自动创建群聊消息：通知所有订单参与者
+    from app.models.message import Message
+    dp_name = delivery_person.nickname or delivery_person.real_name or f"配送员{delivery_person_id}"
+
+    group_msg = Message(
+        sender_id=delivery_person_id,
+        sender_role="delivery",
+        receiver_id=0,
+        receiver_role="all",
+        order_id=order_id,
+        content=f"🛵 {dp_name}已接单，正在前往商家取餐。如有问题可在此联系配送员。",
+        message_type="system",
+    )
+    db.add(group_msg)
+
     db.commit()
     db.refresh(delivery_order)
     return delivery_order
@@ -268,6 +283,24 @@ def pickup_order(
     now = datetime.now(timezone.utc)
     delivery_order.status = "picked_up"
     delivery_order.picked_up_at = now
+
+    # 通知用户和商家：配送员已取餐（群聊消息）
+    from app.models.message import Message
+    order = delivery_order.order
+    dp = delivery_order.delivery_person
+    dp_name = dp.nickname or dp.real_name if dp else f"配送员{delivery_person_id}"
+
+    if order:
+        group_msg = Message(
+            sender_id=delivery_person_id,
+            sender_role="delivery",
+            receiver_id=0,
+            receiver_role="all",
+            order_id=order_id,
+            content=f"✅ {dp_name}已取餐，正在为您配送中。",
+            message_type="system",
+        )
+        db.add(group_msg)
 
     db.commit()
     db.refresh(delivery_order)
@@ -335,6 +368,23 @@ def deliver_order(
     delivery_person = delivery_order.delivery_person
     if delivery_person:
         delivery_person.completed_orders = (delivery_person.completed_orders or 0) + 1
+
+    # 通知用户和商家：配送员已送达（群聊消息）
+    from app.models.message import Message
+    dp = delivery_person
+    dp_name = dp.nickname or dp.real_name if dp else f"配送员{delivery_person_id}"
+
+    if order:
+        group_msg = Message(
+            sender_id=delivery_person_id,
+            sender_role="delivery",
+            receiver_id=0,
+            receiver_role="all",
+            order_id=order_id,
+            content=f"🏁 {dp_name}已送达，请确认收货。如有问题可联系配送员。",
+            message_type="system",
+        )
+        db.add(group_msg)
 
     db.commit()
     db.refresh(delivery_order)

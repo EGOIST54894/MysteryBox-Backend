@@ -56,6 +56,22 @@ async def _notify_location_update(request: Request, order_id: int, data: dict):
         logger.error(f"WebSocket 位置推送失败 order_id={order_id}: {e}")
 
 
+async def _notify_new_message(request: Request, order_id: int, content: str,
+                              sender_name: str = "", sender_role: str = "delivery"):
+    """通过 WebSocket 推送新消息通知（群聊）"""
+    try:
+        manager = request.app.state.websocket_manager
+        await manager.send_message(str(order_id), {
+            "order_id": order_id,
+            "content": content,
+            "sender_name": sender_name,
+            "sender_role": sender_role,
+            "message_type": "system",
+        })
+    except Exception as e:
+        logger.error(f"WebSocket 消息推送失败 order_id={order_id}: {e}")
+
+
 # ──────────────────────────── API 端点 ────────────────────────────
 
 @router.get("/delivery/orders/available", summary="获取可接订单列表")
@@ -128,16 +144,23 @@ async def accept_order(
 
         # WebSocket 推送订单状态变更
         await _notify_order_update(request, order_id, {
+            "type": "order_accepted",
             "order_id": order_id,
-            "order_status": order.order_status if order else "delivering",
+            "newStatus": order.order_status if order else "confirmed",
+            "order_status": order.order_status if order else "confirmed",
             "delivery_status": delivery_order.status,
-            "delivery_person": {
-                "id": delivery_person.id if delivery_person else None,
+            "delivery": {
                 "name": delivery_person.real_name if delivery_person else "",
                 "phone": delivery_person.phone if delivery_person else "",
+                "status": delivery_order.status,
             },
-            "event": "order_accepted",
         })
+
+        # WebSocket 推送新消息通知（群聊）
+        dp_name = delivery_person.nickname or delivery_person.real_name if delivery_person else f"配送员{delivery_person_id}"
+        await _notify_new_message(request, order_id,
+            content=f"🛵 {dp_name}已接单，正在前往商家取餐。如有问题可在此联系配送员。",
+            sender_name=dp_name, sender_role="delivery")
 
         return success_response(data=result, message="接单成功")
 
@@ -178,12 +201,25 @@ async def pickup_order(
         }
 
         # WebSocket 推送
+        dp = delivery_order.delivery_person
         await _notify_order_update(request, order_id, {
+            "type": "order_picked_up",
             "order_id": order_id,
+            "newStatus": "delivering",
             "delivery_status": delivery_order.status,
+            "delivery": {
+                "name": dp.real_name if dp else "",
+                "phone": dp.phone if dp else "",
+                "status": delivery_order.status,
+            },
             "picked_up_at": delivery_order.picked_up_at.isoformat() if delivery_order.picked_up_at else None,
-            "event": "order_picked_up",
         })
+
+        # WebSocket 推送新消息通知（群聊）
+        dp_name = dp.nickname or dp.real_name if dp else f"配送员{delivery_person_id}"
+        await _notify_new_message(request, order_id,
+            content=f"✅ {dp_name}已取餐，正在为您配送中。",
+            sender_name=dp_name, sender_role="delivery")
 
         return success_response(data=result, message="取餐确认成功")
 
@@ -226,13 +262,25 @@ async def deliver_order(
         }
 
         # WebSocket 推送订单已送达
+        dp = delivery_order.delivery_person
         await _notify_order_update(request, order_id, {
+            "type": "order_delivered",
             "order_id": order_id,
-            "order_status": "delivered",
+            "newStatus": "delivered",
             "delivery_status": delivery_order.status,
+            "delivery": {
+                "name": dp.real_name if dp else "",
+                "phone": dp.phone if dp else "",
+                "status": delivery_order.status,
+            },
             "delivered_at": delivery_order.delivered_at.isoformat() if delivery_order.delivered_at else None,
-            "event": "order_delivered",
         })
+
+        # WebSocket 推送新消息通知（群聊）
+        dp_name = dp.nickname or dp.real_name if dp else f"配送员{delivery_person_id}"
+        await _notify_new_message(request, order_id,
+            content=f"🏁 {dp_name}已送达，请确认收货。如有问题可联系配送员。",
+            sender_name=dp_name, sender_role="delivery")
 
         return success_response(data=result, message="送达确认成功")
 

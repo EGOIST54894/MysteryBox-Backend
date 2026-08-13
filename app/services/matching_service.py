@@ -218,6 +218,7 @@ def recommend_boxes(
             "pickup_start_time": box.pick_up_start,
             "pickup_end_time": box.pick_up_end,
             "store_name": item["merchant"].store_name,
+            "merchant_name": item["merchant"].store_name,
             "store_logo": item["merchant"].logo_url,
             "tags": [{"id": t.id, "tag_name": t.tag_name} for t in tags],
             "distance": item["distance"],

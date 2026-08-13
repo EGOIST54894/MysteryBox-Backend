@@ -103,7 +103,7 @@ def _build_box_query(db: Session, rarity: str, filters: dict):
         MysteryBox.rarity == rarity,
     )
 
-    # 价格筛选
+    # 价格筛选（按售价 sale_price 过滤，用户关心实际支付价格）
     if filters.get("min_price") is not None:
         q = q.filter(MysteryBox.sale_price >= float(filters["min_price"]))
     if filters.get("max_price") is not None:
@@ -260,6 +260,7 @@ def draw_box(
             "meme_tags": selected_box.meme_tags,
             "tags": tag_names,
             "store_name": merchant.store_name if merchant else None,
+            "merchant_name": merchant.store_name if merchant else None,
             "city": merchant.city if merchant else None,
         },
         "daily_remaining": daily_remaining,
@@ -376,6 +377,7 @@ def get_draw_history(
             "cover_image": box.cover_image,
             "meme_tags": box.meme_tags,
             "store_name": merchant.store_name if merchant else None,
+            "merchant_name": merchant.store_name if merchant else None,
             "tags": [t.tag_name for t in tags],
             "meme_text": random.choice(RARITY_MEME_MAP.get(dr.rarity, ["惊喜时刻！"])),
             "created_at": dr.created_at.isoformat() if dr.created_at else None,

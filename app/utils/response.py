@@ -16,11 +16,11 @@ def success_response(data: Any = None, message: str = "success") -> dict:
         message: 提示消息，默认 "success"
 
     Returns:
-        标准成功响应字典: {"code": 0, "message": ..., "data": ...}
+        标准成功响应字典: {"code": 200, "message": ..., "data": ...}
 
     Example:
         >>> success_response({"id": 1, "name": "张三"})
-        {"code": 0, "message": "success", "data": {"id": 1, "name": "张三"}}
+        {"code": 200, "message": "success", "data": {"id": 1, "name": "张三"}}
     """
     return {
         "code": 200,
@@ -72,7 +72,7 @@ def paginated_response(
     Example:
         >>> paginated_response(items=[...], total=100, page=1, size=20)
         {
-            "code": 0,
+            "code": 200,
             "message": "success",
             "data": {
                 "items": [...],

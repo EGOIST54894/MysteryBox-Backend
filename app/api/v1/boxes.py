@@ -46,6 +46,7 @@ def list_boxes(
         default="default",
         description="排序方式: default/price_asc/price_desc/distance/rating/sales",
     ),
+    keyword: Optional[str] = Query(None, description="关键词搜索"),
     lat: Optional[float] = Query(None, description="用户纬度（距离排序时使用）"),
     lng: Optional[float] = Query(None, description="用户经度（距离排序时使用）"),
     radius: Optional[float] = Query(None, ge=0, description="搜索半径（米）"),
@@ -68,6 +69,7 @@ def list_boxes(
         lat=lat,
         lng=lng,
         radius=radius,
+        keyword=keyword,
     )
     items, total = get_box_list(query_params, db)
     return paginated_response(items=items, total=total, page=page, size=size)

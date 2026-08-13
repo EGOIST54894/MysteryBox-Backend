@@ -388,6 +388,41 @@ def ready_order(
         )
 
     order.order_status = "ready_pickup"
+
+    # 通知配送员：商家已出餐（群聊消息）
+    from app.models.delivery import DeliveryOrder as DeliveryOrderModel
+    from app.models.message import Message
+    delivery_order = (
+        db.query(DeliveryOrderModel)
+        .filter(DeliveryOrderModel.order_id == order_id)
+        .first()
+    )
+    merchant_name = merchant.nickname or merchant.store_name
+    if delivery_order:
+        # 发群聊消息（所有参与者可见）
+        group_msg = Message(
+            sender_id=merchant.id,
+            sender_role="merchant",
+            receiver_id=0,
+            receiver_role="all",
+            order_id=order_id,
+            content=f"🍱 {merchant_name}已出餐，请尽快前往取餐并送达。",
+            message_type="system",
+        )
+        db.add(group_msg)
+    else:
+        # 尚无骑手接单，仍需通知（后续骑手接单后能看到）
+        group_msg = Message(
+            sender_id=merchant.id,
+            sender_role="merchant",
+            receiver_id=0,
+            receiver_role="all",
+            order_id=order_id,
+            content=f"🍱 {merchant_name}已出餐，等待骑手接单取餐。",
+            message_type="system",
+        )
+        db.add(group_msg)
+
     db.commit()
 
     return success_response(

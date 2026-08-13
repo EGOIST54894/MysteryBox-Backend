@@ -42,6 +42,9 @@ class User(Base, TimestampMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="最后登录时间"
     )
+    balance: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False, comment="账户余额（元）"
+    )
 
     # 关系
     addresses: Mapped[List["UserAddress"]] = relationship(
@@ -95,6 +98,9 @@ class UserAddress(Base, TimestampMixin):
     )
     is_default: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, comment="是否默认地址"
+    )
+    tag: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="地址标签（家/公司/学校等）"
     )
 
     # 关系

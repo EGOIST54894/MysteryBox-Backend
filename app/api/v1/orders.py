@@ -43,27 +43,27 @@ def orders_simple(
     orders, _ = get_user_orders(user_id=user_id, status_filter=None, page=1, size=100, db=db)
     result = []
     for o in orders:
-        oid = o.get("id", 0) if isinstance(o, dict) else getattr(o, "id", 0)
-        ono = o.get("order_no", "") if isinstance(o, dict) else getattr(o, "order_no", "")
-        bid = o.get("box_id", 0) if isinstance(o, dict) else getattr(o, "box_id", 0)
-        ost = o.get("order_status", "") if isinstance(o, dict) else getattr(o, "order_status", "")
-        paid = o.get("paid_amount", 0) if isinstance(o, dict) else getattr(o, "paid_amount", 0)
-        total = o.get("total_amount", 0) if isinstance(o, dict) else getattr(o, "total_amount", 0)
-        qty = o.get("quantity", 1) if isinstance(o, dict) else getattr(o, "quantity", 1)
-        cat = o.get("created_at", "") if isinstance(o, dict) else getattr(o, "created_at", "")
+        # o 是 get_user_orders 返回的 dict
+        oid = o.get("id", 0)
+        ono = o.get("order_no", "")
+        bid = o.get("box_id", 0)
+        ost = o.get("order_status", "")
+        actual = o.get("actual_price", 0)
+        qty = o.get("quantity", 1)
+        cat = o.get("created_at", "")
         result.append({
             "id": oid,
             "orderNo": ono or "",
             "boxId": bid or 0,
-            "boxTitle": "盲盒商品",
-            "boxCover": "",
-            "boxType": "surplus",
-            "merchantName": "",
-            "status": "paid" if ost == "pending_pay" else (ost or ""),
-            "actualPrice": int(float(paid or total or 0) * 100),
+            "boxTitle": o.get("box_title", ""),
+            "boxCover": o.get("box_cover", ""),
+            "boxType": o.get("box_type", ""),
+            "merchantName": o.get("merchant_name", ""),
+            "status": ost or "",
+            "actualPrice": float(actual),
             "quantity": qty or 1,
             "createdAt": str(cat or ""),
-            "updatedAt": str(cat or ""),
+            "updatedAt": str(o.get("updated_at", "") or ""),
         })
     return {"code": 200, "message": "success", "data": result}
 
@@ -119,7 +119,7 @@ def create_order_api(
 def list_my_orders(
     status_filter: str = Query(None, alias="status", description="按订单状态筛选"),
     page: int = Query(1, ge=1, description="页码"),
-    size: int = Query(10, ge=1, le=100, description="每页条数"),
+    size: int = Query(10, ge=1, le=100, alias="page_size", description="每页条数"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):

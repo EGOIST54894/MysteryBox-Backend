@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from jwt import PyJWTError
+from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -228,7 +228,7 @@ def refresh_access_token(refresh_token: str) -> TokenResponse:
     """
     try:
         payload = decode_token(refresh_token)
-    except PyJWTError:
+    except JWTError:
         raise ValueError("无效的刷新令牌")
 
     if payload.get("type") != "refresh":

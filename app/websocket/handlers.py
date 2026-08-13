@@ -14,8 +14,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-import jwt
-from jwt import PyJWTError
+from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -52,7 +51,7 @@ def _verify_token(token: str) -> dict:
             algorithms=[settings.JWT_ALGORITHM],
         )
         return payload
-    except PyJWTError:
+    except JWTError:
         raise RuntimeError("无效的认证凭证")
 
 

@@ -1,22 +1,34 @@
 """
 应用配置模块
 使用 pydantic-settings 管理所有配置项，支持从环境变量或 .env 文件加载。
+兼容 pydantic v1 (BaseSettings from pydantic) 和 pydantic v2 (BaseSettings from pydantic_settings)。
 """
 
 from pathlib import Path
 from typing import List
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+    _USE_V2 = True
+except ImportError:
+    from pydantic import BaseSettings
+    _USE_V2 = False
 
 
 class Settings(BaseSettings):
     """应用全局配置"""
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-    )
+    if _USE_V2:
+        model_config = SettingsConfigDict(
+            env_file=".env",
+            env_file_encoding="utf-8",
+            case_sensitive=False,
+        )
+    else:
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+            case_sensitive = False
 
     # ==================== 应用基础信息 ====================
     APP_NAME: str = "外卖盲盒"

@@ -188,6 +188,44 @@ class ConnectionManager:
                 if order_id in self.tracking_connections and not self.tracking_connections[order_id]:
                     del self.tracking_connections[order_id]
 
+    async def send_message(self, order_id: str, message_data: dict) -> None:
+        """
+        向指定订单的所有监听连接推送新消息通知。
+
+        用于群聊消息实时推送 —— 当有人发送消息或系统生成消息时，
+        通过此方法推送给所有连接到此订单 WebSocket 的客户端。
+
+        消息格式:
+            {"type": "new_message", "data": {...}, "timestamp": ...}
+
+        Args:
+            order_id: 订单ID（字符串形式）
+            message_data: 消息数据（content, sender_name, sender_role 等）
+        """
+        payload = {
+            "type": "new_message",
+            "data": message_data,
+            "timestamp": int(time.time()),
+        }
+
+        async with self._lock:
+            connections = self.order_connections.get(order_id, {})
+
+        disconnected = []
+        for ws in list(connections.keys()):
+            try:
+                await ws.send_json(payload)
+                connections[ws] = time.time()
+            except Exception:
+                disconnected.append(ws)
+
+        if disconnected:
+            async with self._lock:
+                for ws in disconnected:
+                    self.order_connections.get(order_id, {}).pop(ws, None)
+                if order_id in self.order_connections and not self.order_connections[order_id]:
+                    del self.order_connections[order_id]
+
     async def broadcast_to_all(self, message: dict) -> None:
         """
         向所有已连接的 WebSocket 客户端广播通知消息。

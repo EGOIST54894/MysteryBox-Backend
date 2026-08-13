@@ -11,8 +11,6 @@
 - PUT  /users/me/addresses/{id}/default  设为默认地址
 """
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -78,7 +76,7 @@ def update_me(
 # ──────────────────────────── 收货地址 CRUD ────────────────────────────
 
 
-@router.get("/me/addresses", response_model=List[AddressResponse], summary="获取地址列表")
+@router.get("/me/addresses", summary="获取地址列表")
 def list_addresses(
     current_user: User = Depends(_get_current_user_orm),
     db: Session = Depends(get_db),
@@ -90,12 +88,13 @@ def list_addresses(
         .order_by(UserAddress.is_default.desc(), UserAddress.created_at.desc())
         .all()
     )
-    return addresses
+    return success_response(data=[
+        AddressResponse.model_validate(a).model_dump() for a in addresses
+    ])
 
 
 @router.post(
     "/me/addresses",
-    response_model=AddressResponse,
     status_code=status.HTTP_201_CREATED,
     summary="新增收货地址",
 )
@@ -136,14 +135,15 @@ def create_address(
         latitude=req.latitude,
         longitude=req.longitude,
         is_default=is_default,
+        tag=req.tag,
     )
     db.add(address)
     db.commit()
     db.refresh(address)
-    return address
+    return success_response(data=AddressResponse.model_validate(address).model_dump(), message="地址添加成功")
 
 
-@router.put("/me/addresses/{address_id}", response_model=AddressResponse, summary="修改收货地址")
+@router.put("/me/addresses/{address_id}", summary="修改收货地址")
 def update_address(
     address_id: int,
     req: AddressUpdate,
@@ -176,7 +176,7 @@ def update_address(
 
     db.commit()
     db.refresh(address)
-    return address
+    return success_response(data=AddressResponse.model_validate(address).model_dump(), message="地址修改成功")
 
 
 @router.delete("/me/addresses/{address_id}", summary="删除收货地址")
@@ -201,7 +201,6 @@ def delete_address(
 
 @router.put(
     "/me/addresses/{address_id}/default",
-    response_model=AddressResponse,
     summary="设为默认地址",
 )
 def set_default_address(
@@ -228,4 +227,36 @@ def set_default_address(
     address.is_default = True
     db.commit()
     db.refresh(address)
-    return address
+    return success_response(data=AddressResponse.model_validate(address).model_dump(), message="已设为默认地址")
+
+
+# ──────────────────────────── 账户余额 ────────────────────────────
+
+from pydantic import BaseModel, Field
+
+class RechargeRequest(BaseModel):
+    amount: float = Field(..., ge=-10000, le=10000, description="充值金额（元），正数为充值，负数为扣款")
+
+
+@router.get("/me/balance", summary="查询余额")
+def get_balance(
+    current_user: User = Depends(_get_current_user_orm),
+):
+    """查询当前用户账户余额"""
+    return success_response(data={"balance": current_user.balance})
+
+
+@router.post("/me/recharge", summary="充值余额")
+def recharge_balance(
+    req: RechargeRequest,
+    current_user: User = Depends(_get_current_user_orm),
+    db: Session = Depends(get_db),
+):
+    """充值余额（简易版：直接增加余额，无需支付）"""
+    current_user.balance += req.amount
+    db.commit()
+    db.refresh(current_user)
+    return success_response(
+        data={"balance": current_user.balance},
+        message=f"充值成功 +¥{req.amount:.2f}"
+    )

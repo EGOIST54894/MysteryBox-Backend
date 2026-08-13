@@ -7,8 +7,7 @@ from typing import Generator, Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import jwt
-from jwt import PyJWTError
+from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -63,7 +62,7 @@ def _decode_token_and_get_user(
             settings.SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
-    except PyJWTError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的认证凭证",
@@ -85,6 +84,50 @@ def _decode_token_and_get_user(
         )
 
     return payload
+
+
+# ==================== 通用认证（支持三端角色） ====================
+VALID_ROLES = {"user", "merchant", "delivery"}
+
+
+async def get_current_any_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+) -> dict:
+    """
+    从请求头的 Bearer Token 中解析当前用户信息。
+    接受 user / merchant / delivery 三种角色。
+
+    返回:
+        {"sub": str, "role": str}
+    """
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭证",
+        )
+
+    user_id = payload.get("sub")
+    role = payload.get("role")
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证凭证中缺少用户标识",
+        )
+
+    if role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"不支持的角色类型: {role}",
+        )
+
+    return {"sub": user_id, "role": role}
 
 
 # ==================== 当前用户依赖注入 ====================
@@ -164,7 +207,7 @@ class RoleChecker:
                 settings.SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
             )
-        except PyJWTError:
+        except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="无效的认证凭证",

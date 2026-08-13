@@ -233,6 +233,7 @@ def get_box_detail(
         "sale_count": box.sale_count,
         "rating_avg": float(box.rating_avg) if box.rating_avg else 0.0,
         "store_name": merchant.store_name if merchant else None,
+        "merchant_name": merchant.store_name if merchant else None,
         "store_logo": merchant.logo_url if merchant else None,
         "tags": tag_list,
         "distance": distance,
@@ -264,6 +265,14 @@ def get_box_list(query: BoxListQuery, db: Session) -> tuple:
     # 类型筛选
     if query.box_type:
         q = q.filter(MysteryBox.box_type == query.box_type)
+
+    # 关键词搜索（标题+描述）
+    if query.keyword:
+        keyword_pattern = f"%{query.keyword}%"
+        q = q.filter(
+            (MysteryBox.title.like(keyword_pattern)) |
+            (MysteryBox.description.like(keyword_pattern))
+        )
 
     # 价格区间筛选
     if query.min_price is not None:
@@ -333,6 +342,7 @@ def get_box_list(query: BoxListQuery, db: Session) -> tuple:
             "pickup_start_time": box.pick_up_start,
             "pickup_end_time": box.pick_up_end,
             "store_name": merchant.store_name if merchant else None,
+            "merchant_name": merchant.store_name if merchant else None,
             "store_logo": merchant.logo_url if merchant else None,
             "tags": [{"id": t.id, "tag_name": t.tag_name} for t in tags],
             "distance": distance,

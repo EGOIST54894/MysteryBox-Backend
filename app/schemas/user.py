@@ -20,6 +20,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     gender: Optional[int] = Field(None, description="性别: 0=未知, 1=男, 2=女")
     status: int = Field(..., description="账户状态: 1=正常, 0=禁用")
+    balance: float = Field(default=0.0, description="账户余额（元）")
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -48,6 +49,7 @@ class AddressCreate(BaseModel):
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
     is_default: bool = Field(default=False, description="是否设为默认地址")
+    tag: Optional[str] = Field(None, max_length=32, description="地址标签（家/公司/学校等）")
 
 
 class AddressUpdate(BaseModel):
@@ -62,6 +64,7 @@ class AddressUpdate(BaseModel):
     latitude: Optional[float] = Field(None, description="纬度")
     longitude: Optional[float] = Field(None, description="经度")
     is_default: Optional[bool] = Field(None, description="是否设为默认地址")
+    tag: Optional[str] = Field(None, max_length=32, description="地址标签")
 
 
 class AddressResponse(BaseModel):
@@ -78,6 +81,7 @@ class AddressResponse(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     is_default: bool
+    tag: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

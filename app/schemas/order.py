@@ -16,7 +16,7 @@ class OrderCreate(BaseModel):
     """下单请求"""
 
     box_id: int = Field(..., gt=0, description="盲盒ID")
-    address_id: int = Field(..., gt=0, description="收货地址ID")
+    address_id: Optional[int] = Field(default=None, gt=0, description="收货地址ID（可选）")
     quantity: int = Field(default=1, ge=1, le=99, description="购买数量")
     group_id: Optional[int] = Field(None, description="拼团ID（参团时传入）")
 
