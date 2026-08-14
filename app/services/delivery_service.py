@@ -33,7 +33,7 @@ def get_available_orders(
     获取配送员附近可接的订单列表。
 
     筛选条件：
-    1. 订单状态为 paid（已支付，待配送员接单）
+    1. 订单状态为 confirmed（商家已接单，待配送员接单）
     2. 该订单尚未被任何配送员接单（无 DeliveryOrder 记录）
     3. 商家有有效的经纬度坐标
 
@@ -48,7 +48,7 @@ def get_available_orders(
     Returns:
         可接订单列表，每项包含订单详情、商家信息、用户地址、距离等
     """
-    # 查询所有 ready_pickup 且未被接单的订单
+    # 查询所有 confirmed（商家已接单）且未被接单的订单
     # 通过 LEFT JOIN 检查 delivery_order 表中是否已有该订单的配送记录
     subquery = (
         db.query(DeliveryOrder.order_id)
@@ -58,7 +58,7 @@ def get_available_orders(
     orders = (
         db.query(Order)
         .filter(
-            Order.order_status == "paid",
+            Order.order_status == "confirmed",
             ~Order.id.in_(subquery),
         )
         .all()
@@ -157,9 +157,9 @@ def accept_order(
 
     流程：
     1. 校验配送员状态（必须是 1-在线 状态）
-    2. 校验订单状态（必须是 paid 且未被其他人接单）
+    2. 校验订单状态（必须是 confirmed 即商家已接单，且未被其他人接单）
     3. 创建 DeliveryOrder 记录
-    4. 更新订单状态为 confirmed
+    4. 更新订单状态为 preparing（配送员已接单，等待商家出餐）
     5. 更新配送员状态为在线
 
     Args:
@@ -190,8 +190,8 @@ def accept_order(
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise ValueError("订单不存在")
-    if order.order_status != "paid":
-        raise ValueError(f"订单当前状态为 '{order.order_status}'，无法接单。仅已支付订单可被接单")
+    if order.order_status != "confirmed":
+        raise ValueError(f"订单当前状态为 '{order.order_status}'，无法接单。仅商家已接单的订单可被配送员接单")
 
     # 3. 检查是否已被其他配送员接单（DeliveryOrder 的 order_id 唯一）
     existing = (
@@ -203,7 +203,7 @@ def accept_order(
         raise ValueError("该订单已被其他配送员接单")
 
     # 4. 校验状态流转
-    _validate_status_transition(order.order_status, "confirmed")
+    _validate_status_transition(order.order_status, "preparing")
 
     # 5. 创建配送记录
     now = datetime.now(timezone.utc)
@@ -215,8 +215,8 @@ def accept_order(
     )
     db.add(delivery_order)
 
-    # 6. 更新订单状态为已确认（配送员已接单）
-    order.order_status = "confirmed"
+    # 6. 更新订单状态为待出餐（配送员已接单，等待商家出餐）
+    order.order_status = "preparing"
 
     # 7. 确保配送员状态为在线
     if delivery_person.status != 1:
@@ -284,9 +284,13 @@ def pickup_order(
     delivery_order.status = "picked_up"
     delivery_order.picked_up_at = now
 
+    # 更新订单状态为配送中（此前为商家出餐后的 ready_pickup）
+    order = delivery_order.order
+    if order and order.order_status == "ready_pickup":
+        order.order_status = "delivering"
+
     # 通知用户和商家：配送员已取餐（群聊消息）
     from app.models.message import Message
-    order = delivery_order.order
     dp = delivery_order.delivery_person
     dp_name = dp.nickname or dp.real_name if dp else f"配送员{delivery_person_id}"
 

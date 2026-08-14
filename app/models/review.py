@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -33,8 +33,8 @@ class Review(Base, TimestampMixin):
     content: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="评价内容"
     )
-    images: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="评价图片URL列表(JSON字符串)"
+    images: Mapped[list | None] = mapped_column(
+        JSON, nullable=True, comment="评价图片URL列表"
     )
     is_anonymous: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, comment="是否匿名"

@@ -17,7 +17,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -73,6 +73,19 @@ def _get_merchant_orm(
             detail="商家已被禁用",
         )
     return merchant
+
+
+# ──────────────────────────── 辅助：WebSocket 推送 ────────────────────────────
+
+
+async def _notify_order_update(request: Request, order_id: int, data: dict):
+    """通过 WebSocket 推送订单状态变更通知（供商家出餐等操作使用）"""
+    import logging
+    try:
+        manager = request.app.state.websocket_manager
+        await manager.send_order_update(str(order_id), data)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"WebSocket 订单推送失败 order_id={order_id}: {e}")
 
 
 # ──────────────────────────── 发布盲盒 ────────────────────────────
@@ -258,7 +271,12 @@ def list_merchant_orders(
     q = db.query(Order).filter(Order.box_id.in_(box_ids_subquery))
 
     if order_status:
-        q = q.filter(Order.order_status == order_status)
+        # 支持逗号分隔的多状态筛选（如 paid,preparing 表示待处理）
+        statuses = [s.strip() for s in order_status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            q = q.filter(Order.order_status == statuses[0])
+        else:
+            q = q.filter(Order.order_status.in_(statuses))
 
     total = q.count()
 
@@ -355,15 +373,16 @@ def confirm_order(
 
 
 @router.put("/merchant/orders/{order_id}/ready", summary="备货完成")
-def ready_order(
+async def ready_order(
     order_id: int,
+    request: Request,
     merchant: Merchant = Depends(_get_merchant_orm),
     db: Session = Depends(get_db),
 ):
     """
-    商家标记备货完成，订单进入待取餐状态。
+    商家标记出餐，订单进入待送达状态。
 
-    将订单状态从 'confirmed'（已确认）或 'preparing'（准备中）变更为 'ready_pickup'（待取餐）。
+    将订单状态从 'preparing'（配送员已接单）变更为 'ready_pickup'（已出餐待送达）。
     """
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
@@ -380,17 +399,17 @@ def ready_order(
             detail="无权操作该订单",
         )
 
-    # 状态校验
-    if order.order_status not in ("confirmed", "preparing"):
+    # 状态校验：配送员接单后（preparing）商家才能出餐
+    if order.order_status != "preparing":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"当前订单状态为'{order.order_status}'，无法标记备货完成",
+            detail=f"当前订单状态为'{order.order_status}'，无法标记出餐。请等待配送员接单",
         )
 
     order.order_status = "ready_pickup"
 
     # 通知配送员：商家已出餐（群聊消息）
-    from app.models.delivery import DeliveryOrder as DeliveryOrderModel
+    from app.models.order import DeliveryOrder as DeliveryOrderModel
     from app.models.message import Message
     delivery_order = (
         db.query(DeliveryOrderModel)
@@ -424,6 +443,14 @@ def ready_order(
         db.add(group_msg)
 
     db.commit()
+
+    # WebSocket 推送：商家已出餐，订单进入待取餐
+    await _notify_order_update(request, order_id, {
+        "type": "order_ready",
+        "order_id": order_id,
+        "newStatus": "ready_pickup",
+        "order_status": "ready_pickup",
+    })
 
     return success_response(
         message="备货完成，等待取餐",
@@ -621,3 +648,11 @@ def update_merchant_profile(
         },
         message="个人信息已更新",
     )
+
+
+@router.get("/merchant/me/balance", summary="查询商家余额")
+def get_merchant_balance(
+    merchant: Merchant = Depends(_get_merchant_orm),
+):
+    """查询当前商家账户余额"""
+    return success_response(data={"balance": merchant.balance})

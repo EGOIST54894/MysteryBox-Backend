@@ -2,13 +2,12 @@
 订单业务逻辑模块
 
 包含完整的订单状态机、拼团逻辑、库存管理等核心业务。
-订单状态流转规则:
+订单状态流转规则（对齐三端正确流程：商家先接单，配送员后接单，无独立取餐步骤）:
     pending_pay -> paid (支付成功) / cancelled (超时取消)
-    paid -> confirmed (商家确认) / cancelled (用户取消)
-    confirmed -> preparing (商家开始备货)
-    preparing -> ready_pickup (备货完成)
-    ready_pickup -> delivering (配送员取餐)
-    delivering -> delivered (配送员送达)
+    paid -> confirmed (商家接单) / cancelled (用户取消)
+    confirmed -> preparing (配送员接单)
+    preparing -> ready_pickup (商家出餐)
+    ready_pickup -> delivered (配送员送达；兼容旧流程 ready_pickup -> delivering -> delivered)
     delivered -> completed (用户确认收货)
     Any active state -> refunding (申请退款)
     refunding -> refunded (退款成功)
@@ -21,6 +20,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.delivery import DeliveryPersonnel
+from app.models.merchant import Merchant
 from app.models.mystery_box import MysteryBox
 from app.models.order import DeliveryOrder, GroupBuyGroup, Order
 from app.models.payment import PaymentRecord
@@ -34,7 +35,8 @@ VALID_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "paid": {"confirmed", "cancelled", "refunding"},
     "confirmed": {"preparing", "refunding"},
     "preparing": {"ready_pickup", "refunding"},
-    "ready_pickup": {"delivering", "refunding"},
+    # 新流程：商家出餐后配送员直接送达；保留 delivering 兼容历史"取餐"订单
+    "ready_pickup": {"delivering", "delivered", "refunding"},
     "delivering": {"delivered", "refunding"},
     "delivered": {"completed", "refunding"},
     "completed": set(),       # 终态，不可再变更
@@ -45,9 +47,8 @@ VALID_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 # 商家端允许的操作映射：当前状态 -> 下一状态（商家只能推进，不能回退）
 MERCHANT_NEXT_STATUS: dict[str, str] = {
-    "paid": "confirmed",
-    "confirmed": "preparing",
-    "preparing": "ready_pickup",
+    "paid": "confirmed",           # 商家接单
+    "preparing": "ready_pickup",   # 商家出餐
 }
 
 
@@ -538,9 +539,56 @@ def confirm_receipt(order_id: int, user_id: int, db: Session) -> Order:
     now = datetime.now(timezone.utc)
     order.order_status = "completed"
     order.completed_at = now
+
+    # ── 订单结算：商家得 70%，配送员得 30% ──
+    _settle_order_balance(order, db)
+
     db.commit()
     db.refresh(order)
     return order
+
+
+def _settle_order_balance(order: Order, db: Session) -> None:
+    """
+    订单完成后结算分成：
+    - 商家得订单实付金额的 70%
+    - 配送员得剩余的 30%
+
+    若订单没有配送员（如自提/无人接单），30% 部分并入商家，
+    避免金额凭空消失。
+
+    此函数仅修改内存中的 ORM 对象，由调用方统一 commit，
+    保证结算与订单状态变更在同一事务中原子提交。
+    """
+    amount = float(order.paid_amount if order.paid_amount else order.total_amount)
+    merchant_share = round(amount * 0.7, 2)
+    delivery_share = round(amount - merchant_share, 2)  # 30%，且保证两笔之和恰等于总额
+
+    # 商家：通过盲盒定位所属商家
+    merchant = None
+    box = order.mystery_box
+    if box and box.merchant_id:
+        merchant = (
+            db.query(Merchant).filter(Merchant.id == box.merchant_id).first()
+        )
+        if merchant:
+            merchant.balance = (merchant.balance or 0.0) + merchant_share
+
+    # 配送员：通过配送记录定位
+    delivery = order.delivery_order
+    delivery_person = None
+    if delivery and delivery.delivery_person_id:
+        delivery_person = (
+            db.query(DeliveryPersonnel)
+            .filter(DeliveryPersonnel.id == delivery.delivery_person_id)
+            .first()
+        )
+        if delivery_person:
+            delivery_person.balance = (delivery_person.balance or 0.0) + delivery_share
+
+    # 无配送员时，剩余 30% 并入商家
+    if delivery_person is None and merchant is not None:
+        merchant.balance = (merchant.balance or 0.0) + delivery_share
 
 
 # ──────────────────────────── 商家端订单列表 ────────────────────────────

@@ -49,6 +49,9 @@ class DeliveryPersonnel(Base, TimestampMixin):
     completed_orders: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False, comment="已完成订单数"
     )
+    balance: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False, comment="账户余额（元），订单完成后按 30% 分成入账"
+    )
 
     # 关系
     delivery_orders: Mapped[List["DeliveryOrder"]] = relationship(

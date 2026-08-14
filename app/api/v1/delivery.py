@@ -445,3 +445,16 @@ def update_delivery_profile(
         },
         message="个人信息已更新",
     )
+
+
+@router.get("/delivery/me/balance", summary="查询配送员余额")
+def get_delivery_balance(
+    current_delivery: dict = Depends(get_current_delivery),
+    db: Session = Depends(get_db),
+):
+    """查询当前配送员账户余额"""
+    delivery_person_id = int(current_delivery["sub"])
+    dp = db.query(DeliveryPersonnel).filter(DeliveryPersonnel.id == delivery_person_id).first()
+    if not dp:
+        return error_response(4002, "配送员不存在")
+    return success_response(data={"balance": dp.balance})

@@ -70,6 +70,9 @@ class Merchant(Base, TimestampMixin):
     rating_avg: Mapped[float] = mapped_column(
         Float, default=0.0, nullable=False, comment="平均评分"
     )
+    balance: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False, comment="账户余额（元），订单完成后按 70% 分成入账"
+    )
 
     # 关系
     mystery_boxes: Mapped[List["MysteryBox"]] = relationship(
